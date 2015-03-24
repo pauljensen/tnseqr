@@ -1,4 +1,6 @@
 
+# DEPRECATED; use preprocess.R instead
+
 library(stringr)
 library(pryr)
 

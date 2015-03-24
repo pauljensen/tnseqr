@@ -59,8 +59,8 @@ split_by_overhang_length <- function(filelog) {
     newlog$file <- paste0(filelog$file[i], ".", lengths)
     newlog$overhang <- lengths
     outlog <- rbind(outlog, newlog)
+    file.remove(paste0(filelog$file[i], ".unmatched"))
   }
-  file.remove(paste0(filelog$file[1], ".unmatched"))
   file.remove("barcode.txt")
   cleanup_files(filelog)
   return(count_reads(outlog))
@@ -138,6 +138,30 @@ final_trim_filter <- function(filelog) {
   return(filelog)
 }
 
+final_trim_filter_collapse <- function(filelog) {
+  quallog <- filelog
+  quallog$file <- paste0(filelog$file, ".quality")
+  for (i in 1:nrow(filelog)) {
+    if (filelog$reads[i] > 0) {
+      cmd <- paste("(",
+                   fastx_trimmer(Q=33, f=7), "|",
+                   "fastq_quality_filter -Q 33 -q 8 -p 100", "|",
+                   "fastx_collapser -Q 33",
+                   ")",
+                   "<", filelog$file[i], 
+                   ">", quallog$file[i])
+    } else {
+      cmd <- paste("cp", filelog$file[i], quallog$file[i])
+    }
+    #cat(cmd)
+    system(cmd)
+  }
+  cleanup_files(filelog)
+  quallog$quality_reads <- quallog$reads
+  quallog$reads <- filelog$reads
+  return(quallog)
+}
+
 move_split_files <- function(filelog, path) {
   splitpath <- paste0(path, "/split")
   system(paste("mkdir", splitpath))
@@ -180,11 +204,55 @@ preprocess <- function(path) {
   return(filelog)
 }
 
-filelog1 <- preprocess("test")
-filelog2 <- trim_front_back(filelog1)
-filelog3 <- split_by_overhang_length(filelog2)
-filelog4 <- trim_transposon_sequence(filelog3)
-filelog5 <- split_by_barcode(filelog4, "test/barcodes.txt")
-filelog6 <- final_trim_filter(filelog5)
-filelog7 <- move_split_files(filelog6,"test")
-filelog8 <- collapse_by_overhang(filelog7,"test")
+process_tn_seq <- function(path) {
+  bcfile <- paste0(path, "/barcodes.txt")
+  
+  filelog <- vector("list", length=8)
+  filelog[[1]] <- preprocess(path)
+  filelog[[2]] <- trim_front_back(filelog[[1]])
+  filelog[[3]] <- split_by_overhang_length(filelog[[2]])
+  filelog[[4]] <- trim_transposon_sequence(filelog[[3]])
+  filelog[[5]] <- split_by_barcode(filelog[[4]], bcfile)
+  filelog[[6]] <- final_trim_filter_collapse(filelog[[5]])
+  filelog[[7]] <- move_split_files(filelog[[6]], path)
+  filelog[[8]] <- collapse_by_overhang(filelog[[7]], path)
+  
+  return(filelog)
+}
+
+load_sample_sheet <- function(path) {
+  read.csv(paste0(path, "/samples.csv"), stringsAsFactors=F)
+}
+
+map_reads <- function(samples, path) {
+  map_path <- paste0(path, "/mapped")
+  samples$mapfile <- character(nrow(samples))
+  system(paste("mkdir", map_path))
+  for (i in 1:nrow(samples)) {
+    split_file <- paste0(path, "/split/", samples$Lane[i], 
+                         "_", samples$Barcode[i], ".fastq")
+    map_file <- paste0(map_path, "/", samples$Lane[i], "_",
+                       samples$Barcode[i], ".map")
+    bowtie_opts <- "-f -m 1 -n 1 --best -y -p 2"
+    index_path <- paste0("~/seqdata/index/", samples$Genome[i])
+    bowtie_path <- "~/bowtie/bowtie"
+    system(paste(bowtie_path, bowtie_opts, index_path,
+                 split_file, ">", map_file))
+    samples$mapfile[i] <- map_file
+  }
+  return(samples)
+}
+
+path <- "~/seqdata/strain_comparison"
+samples <- map_reads(load_sample_sheet(path), path)
+
+#filelog <- process_tn_seq("~/seqdata/strain_comparison")
+
+#filelog1 <- preprocess("~/seqdata/strain_comparison")
+#filelog2 <- trim_front_back(filelog1)
+#filelog3 <- split_by_overhang_length(filelog2)
+#filelog4 <- trim_transposon_sequence(filelog3)
+#filelog5 <- split_by_barcode(filelog4, "~/seqdata/strain_comparison/barcodes.txt")
+#filelog6 <- final_trim_filter_collapse(filelog5)
+#filelog7 <- move_split_files(filelog6,"~/seqdata/strain_comparison")
+#filelog8 <- collapse_by_overhang(filelog7,"~/seqdata/strain_comparison/test")

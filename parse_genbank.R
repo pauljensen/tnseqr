@@ -1,5 +1,4 @@
 
-library(plyr)
 
 get.word.starts <- function(line) {
   gregexpr('[^ ]+',line,perl=TRUE)[[1]]
@@ -112,10 +111,6 @@ parse.genbank.lines <- function(lines) {
 
 parse.genbank.file <- function(filename) parse.genbank.lines(readLines(filename))
 
-
-
-
-genes <- parse.genbank.file("test/tigr4.gb")
 
 
 
