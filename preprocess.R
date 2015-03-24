@@ -162,16 +162,46 @@ final_trim_filter_collapse <- function(filelog) {
   return(quallog)
 }
 
-move_split_files <- function(filelog, path) {
+final_filter_collapse <- function(filelog) {
+  quallog <- filelog
+  quallog$file <- paste0(filelog$file, ".quality")
+  for (i in 1:nrow(filelog)) {
+    if (filelog$reads[i] > 0) {
+      cmd <- paste("(",
+                   "fastq_quality_filter -Q 33 -q 8 -p 100", "|",
+                   "fastx_collapser -Q 33",
+                   ")",
+                   "<", filelog$file[i], 
+                   ">", quallog$file[i])
+    } else {
+      cmd <- paste("cp", filelog$file[i], quallog$file[i])
+    }
+    #cat(cmd)
+    system(cmd)
+  }
+  cleanup_files(filelog)
+  quallog$quality_reads <- quallog$reads
+  quallog$reads <- filelog$reads
+  return(quallog)
+}
+
+move_split_files <- function(filelog, path, overhang=T) {
   splitpath <- paste0(path, "/split")
   system(paste("mkdir", splitpath))
   newfile <- character(nrow(filelog))
   for (i in 1:nrow(filelog)) {
-    newfile[i] <- paste0(splitpath, "/",
-                         paste(filelog$lane[i], 
-                               filelog$overhang[i], 
-                               filelog$barcode[i], sep="_"),
-                         ".fastq")
+    if (overhang) {
+      newfile[i] <- paste0(splitpath, "/",
+                           paste(filelog$lane[i], 
+                                 filelog$overhang[i], 
+                                 filelog$barcode[i], sep="_"),
+                           ".fastq")
+    } else {
+      newfile[i] <- paste0(splitpath, "/",
+                           paste(filelog$lane[i],  
+                                 filelog$barcode[i], sep="_"),
+                           ".fastq")
+    }
     system(paste("mv", filelog$file[i], newfile[i]))
   }
   newlog <- filelog
@@ -200,8 +230,41 @@ collapse_by_overhang <- function(filelog, path) {
 preprocess <- function(path) {
   lane_files <- system(paste0("ls -1 ", path, "/input"), intern=T)
   filelog <- data.frame(lane=lane_files, 
-                       file=paste(path, "input", lane_files, sep="/"))
+                       file=paste(path, "input", lane_files, sep="/"),
+                       stringsAsFactors=F)
   return(filelog)
+}
+
+JULIA_SPLITTER_CMD <- "julia ~/Dropbox/bc/fastx_tools/tnseq_barcode_splitter.jl"
+
+julia_barcode_splitter <- function(filelog, bcfile) {
+  outlog <- NULL
+  barcodes <- load_barcodes(bcfile)
+  for (i in 1:nrow(filelog)) {
+    # julia cannot handle tilde expansion
+    cmd <- paste(JULIA_SPLITTER_CMD,
+                 "-m 1 -p 1", 
+                 "--prefix", path.expand(filelog$file[i]),
+                 "--barcode", path.expand(bcfile), 
+                 "-i", path.expand(filelog$file[i]))
+    system(cmd)
+    
+    newlog <- filelog[rep.int(i,length(barcodes)),]
+    newlog$file <- paste0(filelog$file[i], "_", barcodes, ".fastq")
+    newlog$barcode <- barcodes
+    
+    #logs <- read.table("out.log",stringsAsFactors=F)
+    #reads <- logs$reads
+    #names(reads) <- logs$pool
+    #cat(reads)
+    #newlog$reads <- reads[newlog$barcode]
+    #file.remove("out.log")
+    
+    outlog <- rbind(outlog, newlog)
+    #file.remove(paste0(filelog$file[i], ".unmatched"))
+  }
+  #cleanup_files(filelog)
+  return(count_reads(outlog))
 }
 
 process_tn_seq <- function(path) {
@@ -216,6 +279,17 @@ process_tn_seq <- function(path) {
   filelog[[6]] <- final_trim_filter_collapse(filelog[[5]])
   filelog[[7]] <- move_split_files(filelog[[6]], path)
   filelog[[8]] <- collapse_by_overhang(filelog[[7]], path)
+  
+  return(filelog)
+}
+
+process_tn_seq_fast <- function(path) {
+  bcfile <- paste0(path, "/barcodes.txt")
+  filelog <- vector("list", length=1)
+  filelog[[1]] <- preprocess(path)
+  filelog[[2]] <- julia_barcode_splitter(filelog[[1]], bcfile)
+  filelog[[3]] <- final_filter_collapse(filelog[[2]])
+  filelog[[4]] <- move_split_files(filelog[[3]], path, overhang=F)
   
   return(filelog)
 }
@@ -243,10 +317,14 @@ map_reads <- function(samples, path) {
   return(samples)
 }
 
-path <- "~/seqdata/strain_comparison"
-samples <- map_reads(load_sample_sheet(path), path)
+path <- "~/seqdata/strain_comparison_test"
+#samples <- map_reads(load_sample_sheet(path), path)
 
-#filelog <- process_tn_seq("~/seqdata/strain_comparison")
+#filelog <- process_tn_seq_fast("~/Dropbox/bc/tnseqr/test")
+
+ptm <- proc.time()
+filelog <- process_tn_seq(path)
+elapsed <- proc.time() - ptm
 
 #filelog1 <- preprocess("~/seqdata/strain_comparison")
 #filelog2 <- trim_front_back(filelog1)
