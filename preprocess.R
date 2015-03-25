@@ -231,5 +231,5 @@ tnseq <- create_tnseq_experiment(path)
 tnseq <- preprocess_reads(tnseq)
 #elapsed <- proc.time() - ptm
 
-#tnseq <- map_reads(tnseq)
+tnseq <- map_reads(tnseq)
 

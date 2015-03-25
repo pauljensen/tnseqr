@@ -1,116 +1,36 @@
 
-
-get.word.starts <- function(line) {
-  gregexpr('[^ ]+',line,perl=TRUE)[[1]]
-}
-
-parse.field.line <- function(line) {
-  match <- gregexpr('[^ ]+',line,perl=TRUE)[[1]]
-  list(
-    name = substr(line, match[1], match[1]+attr(match,'match.length')[1]-1),
-    name.start = match[1],
-    value = substring(line, match[2]),
-    value.start = match[2],
-    indent = match[2] - 1
-  )
-}
-
-parse.block.indented <- function(lines) {
-  index <- 0
-  n.lines <- length(lines)
-  
-  next.line <- function() {
-    index <<- index + 1
-    lines[index]
+load_genbank_file <- function(filename,key="gene") {
+  lines <- readLines(filename)
+  is_entry <- str_detect(lines, "^     \\w")
+  is_keyed <- str_detect(lines, paste0("^     ", key))
+  starts <- which(is_keyed)
+  n_groups <- length(starts)
+  stops <- integer(n_groups)
+  all_stops <- which(c(is_entry, T))
+  for (i in 1:n_groups) {
+    stops[i] <- (all_stops[all_stops > starts[i]])[1] - 1
   }
-  #current.line <- function() lines[index]
-  backstep.line <- function() index <<- index - 1
-  peek.line <- function() lines[index+1]
-  is.another.line <- function() index < n.lines
+  groups <- lapply(1:n_groups, function(i) lines[starts[i]:stops[i]])
   
-  finish.field <- function(value.start,value) {
-    while (is.another.line() && get.word.starts(peek.line())[1] == value.start) {
-      line <- next.line()
-      starts <- get.word.starts(line)
-      value <- c(value, substring(line,value.start))
-    }
-    value
-  }
-  
-  get.subfield <- function() {
-    field.match <- parse.field.line(next.line())
-    value <- field.match$value
-    value <- finish.field(field.match$value.start, field.match$value)
-    list(
-      name=field.match$name,
-      value=value,
-      fields=list()
-    )
-  }
-  
-  get.next.field <- function() {
-    # assumes there is a next line
-    field.match <- parse.field.line(next.line())
-    field <- list(name=field.match$name,
-                  value=field.match$value,
-                  fields=list())
-    while (is.another.line() && get.word.starts(peek.line())[1] > field.match$name.start) {
-      line <- next.line()
-      starts <- get.word.starts(line)
-      if (starts[1] == field.match$value.start) {
-        # continuation of previous value
-        field$value <- c(field$value, substring(line,starts[1]))
+  parse_group <- function(group) {
+    range <- as.integer(str_match(group[1], "(\\d+)..(\\d+)")[1,c(2,3)])
+    get_quoted <- function(name) {
+      matches <- str_match(group, paste0("/", name, "=\"(.+)\""))
+      hits <- matches[!is.na(matches[,2]),2]
+      if (length(hits) == 0) {
+        return(NA)
+      } else if (length(hits) > 1) {
+        return(hits[1])
       } else {
-        # subfield
-        backstep.line()
-        field$fields <- c(field$fields, list(get.subfield()))
+        return(hits)
       }
     }
-    field
+    return(list(start=range[1], stop=range[2],
+                locus=get_quoted("locus_tag"),
+                gene=get_quoted("gene")))
   }
   
-  fields <- list()
-  while (is.another.line()) {
-    fields <- c(fields, list(get.next.field()))
-  }
-  fields
+  df <- NULL
+  do.call(rbind, lapply(groups, function(x) as.data.frame(parse_group(x))))
 }
-
-fields.to.data.frame <- function(fields) {
-  parse.qualifier <- function(qual) {
-    matches <- regmatches(qual, regexec("/(.+)=(.+)",qual))[[1]][-1]
-    if (substr(matches[2],1,1) == '"')
-      matches[2] <- substr(matches[2],2,nchar(matches[2])-1)
-    matches
-  }
-  build.row <- function(field) {
-    field$value[1] <- paste("/range=", field$value[1], sep="")
-    qual.list <- lapply(as.list(grep('^/.*=',field$value,perl=T,value=T)), parse.qualifier)
-    quals <- vapply(qual.list, function(x) x[2], "")
-    names(quals) <- vapply(qual.list, function(x) x[1], "")
-    as.data.frame(as.list(quals),stringsAsFactors=FALSE)
-  }
-  lapply(fields, build.row)
-  do.call(rbind.fill, lapply(fields, build.row))
-}
-
-add.start.stop <- function(genes) {
-  start.stop <- lapply(as.list(genes$range), function(x) regmatches(x, regexec("(\\d+)..(\\d+)",x))[[1]][-1])
-  genes$start <- as.integer(vapply(start.stop, function(x) x[1], ""))
-  genes$stop <- as.integer(vapply(start.stop, function(x) x[2], ""))
-  genes
-}
-
-parse.genbank.lines <- function(lines) {
-  # returns a data frame of the genes
-  fields <- parse.block.indented(lines)
-  names(fields) <- vapply(fields, function(x) x$name, "")
-  genes <- fields.to.data.frame(Filter(function(x) x$name == "gene", fields$FEATURES$fields))
-  add.start.stop(genes)
-}
-
-parse.genbank.file <- function(filename) parse.genbank.lines(readLines(filename))
-
-
-
 
