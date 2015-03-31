@@ -25,12 +25,13 @@ load_genbank_file <- function(filename,key="gene") {
         return(hits)
       }
     }
-    return(list(start=range[1], stop=range[2],
-                locus=get_quoted("locus_tag"),
-                gene=get_quoted("gene")))
+    return(data.frame(start=range[1], stop=range[2],
+                      locus=get_quoted("locus_tag"),
+                      gene=get_quoted("gene"),
+                      stringsAsFactors=F))
   }
   
   df <- NULL
-  do.call(rbind, lapply(groups, function(x) as.data.frame(parse_group(x))))
+  do.call(rbind, lapply(groups, parse_group))
 }
 
