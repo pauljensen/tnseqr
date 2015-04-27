@@ -224,12 +224,13 @@ map_reads <- function(tnseq) {
 
 #path <- "~/seqdata/strain_comparison"
 #path <- "~/Dropbox/bc/tnseqr/test"
+#path <- "~/seqdata/strain_comparison_nextseq_3_31"
 
 #tnseq <- create_tnseq_experiment(path)
 
-ptm <- proc.time()
-tnseq <- preprocess_reads(nst)
-elapsed <- proc.time() - ptm
+#ptm <- proc.time()
+#tnseq <- preprocess_reads(tnseq)
+#elapsed <- proc.time() - ptm
 
 #tnseq <- map_reads(tnseq)
 

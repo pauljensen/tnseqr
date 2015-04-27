@@ -1,6 +1,7 @@
 
 require(stringr)
 require(dplyr)
+require(GenomicRanges)
 
 pair_samples <- function(tnseq) {
   t1 <- tnseq$samples[tnseq$samples$time == 1,]
@@ -149,25 +150,76 @@ filter_insertions <- function(tnseq, drop_zeros=T, min_total_reads=100) {
   return(tnseq)
 }
 
-map_insertions_to_genes <- function(tnseq) {
+# map_insertions_to_genes <- function(tnseq) {
+#   genomes <- unique(tnseq$paired_samples$genome)
+#   genome_files <- paste0("~/seqdata/genomes/", genomes, ".gbk")
+#   genes <- lapply(genome_files, load_genbank_file)
+#   names(genes) <- genomes
+#   
+#   ptm <- proc.time()
+#   tnseq$insertions %<>%
+#     group_by(genome) %>%
+#     mutate(
+#       loci=sapply(pos, function(x,g) which(x >= genes[[g]][["start"]] & 
+#                                            x <= genes[[g]][["stop"]])[1],
+#                   g=genome[1]),
+#       locus=genes[[genome[1]]]$locus[loci],
+#       start_pos=genes[[genome[1]]][["start"]][loci],
+#       end_pos=genes[[genome[1]]][["stop"]][loci],
+#       frac=(pos - start_pos) / (end_pos - start_pos)
+#     ) %>% ungroup()
+#   print(proc.time() - ptm)
+# 
+#   tnseq$insertions$loci <- NULL
+#   return(tnseq)
+# }
+
+map_insertions_to_genes <- function(tnseq, ignore_start=0.0, ignore_end=0.1) {
   genomes <- unique(tnseq$paired_samples$genome)
   genome_files <- paste0("~/seqdata/genomes/", genomes, ".gbk")
   genes <- lapply(genome_files, load_genbank_file)
   names(genes) <- genomes
   
+  genome2irange <- function(g) {
+    st <- g$start
+    en <- g$stop
+    st2 <- st
+    st[en < st2] <- en[en < st2]
+    en[en < st2] <- st2[en < st2]
+    width <- en - st
+    en <- en - ceiling(ignore_end * width)
+    st <- st + floor(ignore_start * width)
+    return(IRanges(start=st, end=en, names=g$locus))
+  }
+  
+  iranges <- lapply(genes, genome2irange)
+  
+  map_aux <- function(df) {
+    locs <- IRanges(start=df$pos, width=1)
+    ov <- findOverlaps(locs, iranges[[df$genome[1]]])
+    n <- nrow(df)
+    df$locus <- character(n)
+    df$locus[] <- NA
+    df$start_pos <- integer(n)
+    df$start_pos[] <- NA
+    df$end_pos <- df$start_pos
+    df$frac <- as.numeric(df$start_pos)
+    query <- queryHits(ov)
+    subject <- subjectHits(ov)
+    df$locus[query] <- as.character(genes[[df$genome[1]]]$locus[subject])
+    df$start_pos[query] <- genes[[df$genome[1]]]$start[subject]
+    df$end_pos[query] <- genes[[df$genome[1]]]$stop[subject]
+    df$frac <- (df$pos - df$start_pos) / (df$end_pos - df$start_pos)
+    return(df)
+  }
+  
+  ptm <- proc.time()
   tnseq$insertions %<>%
     group_by(genome) %>%
-    mutate(
-      loci=sapply(pos, function(x,g) which(x >= genes[[g]][["start"]] & 
-                                           x <= genes[[g]][["stop"]])[1],
-                  g=genome[1]),
-      locus=genes[[genome[1]]]$locus[loci],
-      start_pos=genes[[genome[1]]][["start"]][loci],
-      end_pos=genes[[genome[1]]][["stop"]][loci],
-      frac=(pos - start_pos) / (end_pos - start_pos)
-    ) %>% ungroup()
-
-  tnseq$insertions$loci <- NULL
+    do(map_aux(.)) %>%
+    ungroup()
+  print(proc.time() - ptm)
+  
   return(tnseq)
 }
 
