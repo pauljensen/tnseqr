@@ -159,7 +159,7 @@ preprocess_reads <- function(tnseq) {
     }
     
     # run preprocess_reads on each input file
-    tnseqs <- lapply(tnseqs, preprocess_reads)
+    tnseqs <- mclapply(tnseqs, preprocess_reads)
     
     # combine the results back into a single tnseq object
     tnseq <- tnseqs[[1]]
@@ -221,13 +221,18 @@ map_reads <- function(tnseq) {
 
 #path <- "~/seqdata/strain_comparison"
 #path <- "~/Dropbox/bc/tnseqr/test"
-#path <- "~/seqdata/strain_comparison_nextseq_3_31"
+#path <- "~/seqdata/strain_comparison_test"
 
 #tnseq <- create_tnseq_experiment(path)
 
 #ptm <- proc.time()
 #tnseq <- preprocess_reads(tnseq)
-#elapsed <- proc.time() - ptm
+#elapsed.preprocess <- proc.time() - ptm
+#print(elapsed.preprocess)
 
+#ptm <- proc.time()
 #tnseq <- map_reads(tnseq)
+#elapsed.mapping <- proc.time() - ptm
+#print(elapsed.mapping)
+
 

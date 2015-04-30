@@ -29,7 +29,7 @@ downsample_insertions <- function(tnseq, fracs=c(0.1, 0.3, 0.5, 0.7, 0.8, 0.9, 0
     return(stats)
   }
   
-  all_stats <- rbind_all(lapply(fracs, downsample_aux))
+  all_stats <- rbind_all(mclapply(fracs, downsample_aux))
   full_stats <- calc_insertion_stats(tnseq)
   full_stats$frac <- 1.0
   all_stats <- bind_rows(all_stats, full_stats)
@@ -37,4 +37,7 @@ downsample_insertions <- function(tnseq, fracs=c(0.1, 0.3, 0.5, 0.7, 0.8, 0.9, 0
   return(all_stats)
 }
 
-
+#ptm <- proc.time()
+#stats <- downsample_insertions(tin, fracs=c(0.1, 0.3, 0.5))
+#elapsed <- proc.time() - ptm
+#print(elapsed)
