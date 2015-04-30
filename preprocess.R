@@ -1,7 +1,4 @@
 
-library(stringr)
-library(dplyr)
-
 JULIA_SPLITTER_CMD <- "julia ~/Dropbox/bc/fastx_tools/tnseq_barcode_splitter.jl"
 
 BOWTIE_CMD <- "~/bowtie/bowtie"

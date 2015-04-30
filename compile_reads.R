@@ -1,8 +1,4 @@
 
-require(stringr)
-require(dplyr)
-require(GenomicRanges)
-
 pair_samples <- function(tnseq) {
   t1 <- tnseq$samples[tnseq$samples$time == 1,]
   t2 <- tnseq$samples[tnseq$samples$time == 2,]

@@ -1,7 +1,4 @@
 
-require(stringr)
-require(dplyr)
-
 tigr4_19f <- read.delim("~/seqdata/homology/tigr4_19f.txt", stringsAsFactors=F)
 names(tigr4_19f) <- c("tigr4", "SPTaiwan_19F")
 

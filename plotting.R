@@ -1,7 +1,4 @@
 
-require(GENE.E)
-require(tidyr)
-
 send_to_genee <- function(tnseq, homologs=NULL) {
   tnseq$fitness$experiment <- paste(tnseq$fitness$condition,
                                     tnseq$fitness$strain)
