@@ -12,15 +12,24 @@ calc_insertion_stats <- function(tnseq) {
   return(inner_join(counts, fitsd, by=c("strain", "condition")))
 }
 
+cppFunction('NumericVector sampleReads(NumericVector x, double frac) {
+  int n = x.size();
+  NumericVector out(n);
+  
+  for(int i = 0; i < n; ++i) {
+    out[i] = rbinom(1,x[i],frac)[0];
+  }
+
+  return out;
+}')
+
 downsample_insertions <- function(tnseq, fracs=c(0.1, 0.3, 0.5, 0.7, 0.8, 0.9, 0.95)) {
   downsample_aux <- function(frac) {
     cat(frac, "\n")
     t <- tnseq
-    binom_reads <- function(cnt) {
-      vapply(cnt, function(x) rbinom(1,x,frac), 0)
-    }
-    t$insertions$reads1 <- binom_reads(t$insertions$reads1)
-    t$insertions$reads2 <- binom_reads(t$insertions$reads2)
+    
+    t$insertions$reads1 <- sampleReads(t$insertions$reads1, frac)
+    t$insertions$reads2 <- sampleReads(t$insertions$reads2, frac)
     
     t$insertions <- t$insertions %>% filter(reads1 > 0 & reads2 > 0)
     
@@ -37,7 +46,7 @@ downsample_insertions <- function(tnseq, fracs=c(0.1, 0.3, 0.5, 0.7, 0.8, 0.9, 0
   return(all_stats)
 }
 
-#ptm <- proc.time()
-#stats <- downsample_insertions(tin, fracs=c(0.1, 0.3, 0.5))
-#elapsed <- proc.time() - ptm
-#print(elapsed)
+ptm <- proc.time()
+stats <- downsample_insertions(tin, fracs=c(0.1, 0.3, 0.5))
+elapsed <- proc.time() - ptm
+print(elapsed)
