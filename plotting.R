@@ -18,4 +18,21 @@ send_to_genee <- function(tnseq, homologs=NULL) {
   return(fit)
 }
 
-#to.genee(plot_fieldvalue(cfit, "condition", "CDM", "strain"))
+plot_insertion_density <- function(tnseq, max_insertions=20) {
+  data <- tnseq$fitness %>% 
+    filter(!is.na(locus), insertions < max_insertions)
+  (ggplot(aes(x=insertions), data=data) + 
+     geom_density(alpha=0.5) + 
+     theme_bw() + 
+     facet_grid(strain ~ library)) %>%
+    print()
+}
+
+plot_condition_strain_matrix <- function(tnseq, variable="fitness") {
+  fit <- tnseq$fitness %>% group_by(strain, condition) %>% mutate(xid=1:n())
+  (ggplot(aes_string(x="xid", y=variable, color="library"), data=fit) +
+     facet_grid(strain ~ condition) + 
+     geom_point(alpha=1/20) + 
+     theme_bw()) %>%
+    print()
+}

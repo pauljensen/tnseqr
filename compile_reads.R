@@ -67,14 +67,6 @@ compress_reads <- function(reads) {
     summarize(reads=sum(reads))
 }
 
-load_compressed_map_file <- function(filename) {
-  reads <- read.csv(filename, header=T, 
-                    col.names=c("pos", "strand", "reads"),
-                    colClasses=c("character", "factor", "integer"))
-  reads$pos <- as.integer(reads$pos)
-  return(reads)
-}
-
 compress_map_file <- function(filename) {
   outfile <- paste0(filename, ".compressed")
   reads <- load_map_file(filename)
@@ -83,10 +75,16 @@ compress_map_file <- function(filename) {
 }
 
 compress_map_files <- function(tnseq) {
-  for (mapfile in tnseq$samples$mapfile) {
-    cat("Compressing MAP file", mapfile, ".\n")
-    compress_map_file(mapfile)
-  }
+  mclapply(tnseq$samples$mapfile, compress_map_file)
+  return(tnseq)
+}
+
+load_compressed_map_file <- function(filename) {
+  reads <- read.csv(filename, header=T, 
+                    col.names=c("pos", "strand", "reads"),
+                    colClasses=c("character", "factor", "integer"))
+  reads$pos <- as.integer(reads$pos)
+  return(reads)
 }
 
 get_read_pairs <- function(mapfile1, mapfile2) {
@@ -127,48 +125,26 @@ load_insertions <- function(tnseq) {
     df <- do.call(data.frame, tnseq$paired_samples[i,cols_to_keep])
     cbind(df, inserts)
   }
-  tnseq$insertions <- do.call(rbind, lapply(1:nrow(tnseq$paired_samples), 
-                                            load_aux))
+  tnseq$insertions <- do.call(rbind, mclapply(1:nrow(tnseq$paired_samples), 
+                                              load_aux))
   return(tnseq)
 }
 
-filter_insertions <- function(tnseq, drop_zeros=T, min_total_reads=100) {
-  filter <- !logical(nrow(tnseq$insertions))
-  if (drop_zeros) {
-    filter <- filter & (tnseq$insertions$reads1 > 0) &
-                (tnseq$insertions$reads2 > 0)
+filter_insertions <- function(tnseq, drop_t1_zeros=T, drop_t2_zeros=F, min_total_reads=35) {
+  to_drop <- !logical(nrow(tnseq$insertions))
+  if (drop_t1_zeros) {
+    to_drop <- to_drop & (tnseq$insertions$reads1 == 0)
+  }
+  if (drop_t2_zeros) {
+    to_drop <- to_drop & (tnseq$insertions$read2 == 0)
   }
   if (min_total_reads > 0) {
-    filter <- filter & (tnseq$insertions$reads1 + tnseq$insertions$reads2 >= 
+    to_drop <- to_drop & (tnseq$insertions$reads1 + tnseq$insertions$reads2 < 
                           min_total_reads)
   }
-  tnseq$insertions <- tnseq$insertions[filter,]
+  tnseq$insertions <- tnseq$insertions[!to_drop,]
   return(tnseq)
 }
-
-# map_insertions_to_genes <- function(tnseq) {
-#   genomes <- unique(tnseq$paired_samples$genome)
-#   genome_files <- paste0("~/seqdata/genomes/", genomes, ".gbk")
-#   genes <- lapply(genome_files, load_genbank_file)
-#   names(genes) <- genomes
-#   
-#   ptm <- proc.time()
-#   tnseq$insertions %<>%
-#     group_by(genome) %>%
-#     mutate(
-#       loci=sapply(pos, function(x,g) which(x >= genes[[g]][["start"]] & 
-#                                            x <= genes[[g]][["stop"]])[1],
-#                   g=genome[1]),
-#       locus=genes[[genome[1]]]$locus[loci],
-#       start_pos=genes[[genome[1]]][["start"]][loci],
-#       end_pos=genes[[genome[1]]][["stop"]][loci],
-#       frac=(pos - start_pos) / (end_pos - start_pos)
-#     ) %>% ungroup()
-#   print(proc.time() - ptm)
-# 
-#   tnseq$insertions$loci <- NULL
-#   return(tnseq)
-# }
 
 map_insertions_to_genes <- function(tnseq, ignore_start=0.0, ignore_end=0.1) {
   genomes <- unique(tnseq$paired_samples$genome)
@@ -220,15 +196,15 @@ map_insertions_to_genes <- function(tnseq, ignore_start=0.0, ignore_end=0.1) {
 }
 
 calculate_fitness <- function(tnseq, group_libraries=T) {
-  tnseq$insertions %<>%
+  tnseq$fitness <- tnseq$insertions %>%
     group_by_("strain", "library", "condition") %>%
     mutate(f1=reads1/sum(reads1),
            f2=reads2/sum(reads2),
-           W=log(mean(expansion) * f2/f1) / 
-                      log(mean(expansion) * (1-f2)/(1-f1))) %>%
+           W=ifelse(reads2==0, 0,log(mean(expansion) * f2/f1) / 
+                                   log(mean(expansion) * (1-f2)/(1-f1)))) %>%
     ungroup()
-  tnseq$insertions %<>% 
-    group_by_("strain", "condition", "locus") %>%
+  tnseq$fitness %<>% 
+    group_by_("strain", "library", "condition", "locus") %>%
     summarize(
       insertions=n(),
       fitness=mean(W),
@@ -237,79 +213,6 @@ calculate_fitness <- function(tnseq, group_libraries=T) {
 
   return(tnseq)
 }
-
-
-# calculate_experiment_fitness <- function(mapfiles1, mapfiles2, expansions, 
-#                                          genes, cutoff=0, front_trim=0, 
-#                                          end_trim=0.1) {
-#   print(mapfiles1)
-#   n_lib <- length(mapfiles1)
-#   loader <- function(i) {
-#     reads <- get_read_pairs(mapfiles1[i], mapfiles2[i])
-#     reads$expansion <- expansions[i]
-#     return(reads)
-#   }
-#   reads <- do.call(rbind, lapply(1:n_lib, loader))
-#   reads$W <- log(reads$expansion * reads$f2/reads$f1) / 
-#                 log(reads$expansion * (1-reads$f2)/(1-reads$f1))
-#   #loci <- sapply(reads$pos, function(x) which(x >= genes$start & 
-#   #                                              x <= genes$stop)[1])
-#   loci <- rep(1, length(reads$pos))
-#   reads$locus <- genes$locus[loci]
-#   reads$start <- genes$start[loci]
-#   reads$stop <- genes$stop[loci]
-#   reads$frac <- (reads$pos - reads$start) / (reads$stop - reads$start)
-#   rowfilter <- !is.na(reads$locus) &
-#                    reads$frac >= front_trim &
-#                    reads$frac <= 1-end_trim
-#   reads <- reads[rowfilter,]
-#   t_test <- function(w) {
-#     if (length(w) == 1) {
-#       return(NA)
-#     } else {
-#       return(tryCatch(t.test(w, mu=1)$p.value, error=function(e) NA))
-#     }
-#   }
-#   final <- reads %>% group_by(locus) %>% 
-#               summarise(fitness=mean(W),
-#                         fitness_sd=sd(W),
-#                         fitness_p=t_test(W),
-#                         insertions=n(),
-#                         reads1=sum(reads1),
-#                         reads2=sum(reads2))
-#   return(final)
-# }
-
-# calculate_fitness <- function(tnseq, ...) {
-#   n_paired <- nrow(tnseq$paired_samples)
-#   cols_to_keep <- c("strain", "library", "condition", "genome", "expansion")
-#   
-#   genomes <- unique(tnseq$paired_samples$genome)
-#   genome_files <- paste0("~/seqdata/genomes/", genomes, ".gbk")
-#   genes <- lapply(genome_files, load_genbank_file)
-#   names(genes) <- genomes
-#   
-# #   prep_sample <- function(idx) {
-# #     cat("Prepping sample", idx, "\n")
-# #     reads <- get_read_pairs(tnseq$paired_samples$t1_mapfile[idx],
-# #                             tnseq$paired_samples$t2_mapfile[idx])
-# #     expansion <- tnseq$paired_samples$expansion[idx]
-# #     gene <- genes[[tnseq$paired_samples$genome[idx]]]
-# #     fit <- calculate_experiment_fitness(reads, gene, expansion, ...)
-# #     cbind(tnseq$paired_samples[rep.int(idx, nrow(fit)),cols_to_keep], fit)
-# #   }
-# #  tnseq$fitness <- do.call(rbind, lapply(1:n_paired, prep_sample))
-#   tnseq$fitness <- tnseq$paired_samples %>%
-#                       group_by(strain, condition) %>%
-#                       do(calculate_experiment_fitness(.$t1_mapfile,
-#                                                       .$t2_mapfile,
-#                                                       .$expansion,
-#                                                       genes[[.$genome[1]]],
-#                                                       ...)) %>%
-#                       ungroup()
-#   return(tnseq)
-# }
-
 
 #reads <- load.reads.file("test/L1_2394_WT_FRUC_T1.map")
 #map <- map.reads(reads,genes)

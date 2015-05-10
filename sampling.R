@@ -1,15 +1,15 @@
 
-calc_insertion_stats <- function(tnseq) {
-  inserts_before <- tnseq$insertions %>% group_by(strain, condition) %>% summarize(insertions_before=n())
+calc_insertion_stats <- function(tnseq, grouping=get_grouping()) {
+  inserts_before <- tnseq$insertions %>% group_by_(.dots=grouping) %>% summarize(insertions_before=n())
   filtered <- tnseq %>% filter_insertions()
-  inserts_after <- filtered$insertions %>% group_by(strain, condition) %>% summarize(insertions_after=n())
-  counts <- inner_join(inserts_before, inserts_after, by=c("strain", "condition"))
+  inserts_after <- filtered$insertions %>% group_by_(.dots=grouping) %>% summarize(insertions_after=n())
+  counts <- inner_join(inserts_before, inserts_after, by=c("strain", "condition", "library"))
     
   fitness <- filtered %>% calculate_fitness()
-  fitsd <- fitness$insertions %>% group_by(strain, condition) %>% summarize(sd_fitness=mean(fitness_sd, na.rm=T),
-                                                                            mean_insertions=mean(insertions, na.rm=T),
-                                                                            median_insertions=floor(median(insertions, na.rm=T)))
-  return(inner_join(counts, fitsd, by=c("strain", "condition")))
+  fitsd <- fitness$fitness %>% group_by_(.dots=grouping) %>% summarize(sd_fitness=mean(fitness_sd, na.rm=T),
+                                                             mean_insertions=mean(insertions, na.rm=T),
+                                                             median_insertions=floor(median(insertions, na.rm=T)))
+  return(inner_join(counts, fitsd, by=grouping))
 }
 
 cppFunction('NumericVector sampleReads(NumericVector x, double frac) {
@@ -46,7 +46,7 @@ downsample_insertions <- function(tnseq, fracs=c(0.1, 0.3, 0.5, 0.7, 0.8, 0.9, 0
   return(all_stats)
 }
 
-ptm <- proc.time()
-stats <- downsample_insertions(tin, fracs=c(0.1, 0.3, 0.5))
-elapsed <- proc.time() - ptm
-print(elapsed)
+#ptm <- proc.time()
+#stats <- downsample_insertions(tin, fracs=c(0.1, 0.3, 0.5))
+#elapsed <- proc.time() - ptm
+#print(elapsed)

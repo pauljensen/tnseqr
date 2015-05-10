@@ -55,6 +55,18 @@ create_tnseq_experiment <- function(path) {
   return(tnseq)
 }
 
+change_paths <- function(tnseq, oldpath, newpath) {
+  changer <- function(x) str_replace(x, oldpath, newpath)
+  for (name in c("path", "input_path", "split_path", "map_path", "log_path")) {
+    tnseq[[name]] <- changer(tnseq[[name]])
+  }
+  change_df <- function(df) {
+    df$file <- changer(df$file)
+    return(df)
+  }
+  tnseq$filelog <- lapply(tnseq$filelog, change_df)
+  return(tnseq)
+}
 
 julia_barcode_splitter <- function(tnseq) {
   filelog <- tnseq$filelog$input
@@ -190,6 +202,7 @@ parse_bowtie_log <- function(logfile) {
   return(c(reads=reads, aligned=aligned))
 }
 
+# TODO: make parallel
 map_reads <- function(tnseq) {
   n_samples <- nrow(tnseq$samples)
   tnseq$samples$mapfile <- character(n_samples)
